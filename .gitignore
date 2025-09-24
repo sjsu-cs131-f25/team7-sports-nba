@@ -2,7 +2,9 @@
 __pycache__/
 *.py[codz]
 *$py.class
-
+# Project data and Artifacts
+data/
+artifacts/
 # C extensions
 *.so
 

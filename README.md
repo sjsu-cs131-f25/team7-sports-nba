@@ -22,3 +22,5 @@ Historical dataset of NBA with detailed box scores (games, players, team, points
 - Source: https://www.kaggle.com/datasets/wyattowalsh/basketball
 - Some missing fields and placeholder IDs are present (ex: blank cells for player2/player3)
 - `artifacts/` and `out/` directories are ignored to keep outputs and generated files out of version control  
+ENG1 run: ./scripts/eng1_edges.sh data/samples/sample_play_by_play.tsv 14 21 2
+Outputs: out/edges.tsv, out/entity_counts.tsv, out/edges_thresholded.tsv

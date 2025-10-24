@@ -174,3 +174,71 @@ END{
 ' "$OUTDIR/signals_keywords.tsv" \
 | sort -k2,2nr -k1,1 > "$OUTDIR/signals_keywords.fixed.tsv" \
 && mv "$OUTDIR/signals_keywords.fixed.tsv" "$OUTDIR/signals_keywords.tsv"
+
+###############################################################################
+# Step 5 – Metrics: Ratios & Buckets
+# - Compute helpfulness ratio = helpful_votes / total_votes
+# - Bucket ratios into: HI (>=0.75), MID (>=0.40), LO (>0 and <0.40), ZERO (=0)
+# - Output:
+#     out/helpfulness_buckets.tsv       (bucket, count, share)
+#     out/helpfulness_ratios.tsv        (id, helpful, total, ratio, bucket)
+###############################################################################
+
+echo "$(ts) Step 5 – Metrics (ratios & buckets): start" | tee -a "$LOGDIR/step5.log"
+
+# Assumptions:
+#   - You have numeric columns for helpful_votes and total_votes
+#   - For NBA data with no such fields, we’ll mock them using eventmsgtype ($3) and eventnum ($2)
+#     just to demonstrate ratio logic reproducibly.
+
+awk -F',' -v OFS='\t' '
+NR==1 { next }  # skip header
+{
+  # Mock numeric fields just to show the pipeline
+  helpful = ($3 + 0)
+  total   = (($2 % 500) + 1)   # bounded "total" 1-500
+  ratio = helpful / total
+  bucket = "ZERO"
+  if (ratio >= 0.75) bucket = "HI"
+  else if (ratio >= 0.40) bucket = "MID"
+  else if (ratio > 0) bucket = "LO"
+  if (ratio >= 0.75) bucket = "HI"
+  else if (ratio >= 0.40) bucket = "MID"
+  else if (ratio > 0) bucket = "LO"
+
+  print $1, helpful, total, sprintf("%.3f", ratio), bucket >> "out/helpfulness_ratios.tmp"
+  count[bucket]++
+  totalrows++
+}
+END {
+  print "bucket","count","share"
+  for (b in count) {
+    share = (totalrows>0 ? 100*count[b]/totalrows : 0)
+    printf "%s\t%d\t%.2f%%\n", b, count[b], share
+  }
+}
+' "$INPUT" 2>>"$LOGDIR/step5.log" > "$OUTDIR/helpfulness_buckets.tsv"
+
+# Deterministic sort by bucket order HI→MID→LO→ZERO
+awk -F'\t' -v OFS='\t' '
+NR==1{print;next}
+{ if($1=="HI")o=1;else if($1=="MID")o=2;else if($1=="LO")o=3;else o=4; print o"\t"$0 }
+' "$OUTDIR/helpfulness_buckets.tsv" | sort -k1,1n | cut -f2- > "$OUTDIR/helpfulness_buckets.sorted.tsv" \
+&& mv "$OUTDIR/helpfulness_buckets.sorted.tsv" "$OUTDIR/helpfulness_buckets.tsv"
+
+# finalize detailed ratios file
+{
+  echo -e "game_id\thelpful\ttotal\tratio\tbucket"
+  sort out/helpfulness_ratios.tmp
+} > out/helpfulness_ratios.tsv
+rm -f out/helpfulness_ratios.tmp
+
+# log line counts
+if [ -f "$OUTDIR/helpfulness_buckets.tsv" ]; then
+  echo "$(ts) Wrote $OUTDIR/helpfulness_buckets.tsv ($(wc -l < "$OUTDIR/helpfulness_buckets.tsv") lines)" | tee -a "$LOGDIR/step5.log"
+fi
+if [ -f "$OUTDIR/helpfulness_ratios.tsv" ]; then
+  echo "$(ts) Wrote $OUTDIR/helpfulness_ratios.tsv ($(wc -l < "$OUTDIR/helpfulness_ratios.tsv") lines)" | tee -a "$LOGDIR/step5.log"
+fi
+
+echo "$(ts) Step 5 – Metrics (ratios & buckets): done" | tee -a "$LOGDIR/step5.log"

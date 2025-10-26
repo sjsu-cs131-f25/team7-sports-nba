@@ -1,21 +1,154 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-OUTDIR="out"
-LOGDIR="logs"
-mkdir -p "$OUTDIR" "$LOGDIR"
-
-ts() { date '+%Y-%m-%d %H:%M:%S'; }
-
 if [ $# -ne 1 ]; then
-  echo "Usage: bash run_pa4.sh <INPUT_CSV>" >&2
+  echo "Usage: bash run_pa4.sh <INPUT_FILE>" >&2
   exit 1
 fi
 
 INPUT="$1"
 
-# Make sure we (and graders) can read inputs
-chmod -R g+rX "$(dirname "$INPUT")" 2>/dev/null || true
+#create output/log directories
+mkdir -p out logs && : > logs/run.log && export LC_ALL=C
+
+#Make sure inputs are readable
+if [[ -d "$INPUT" ]]; then
+  chmod -R g+rX "$INPUT" 2>/dev/null || true
+else
+  chmod g+r "$INPUT" 2>/dev/null || true
+fi
+
+#------ Delimiter detection(CSV vs TSV)----------------
+# Count tabs and commas in header to guess the delimiter
+header="$(head -n 1 "$INPUT")"
+tabs="$(printf "%s" "$header" | tr -cd '\t' | wc -c | tr -d ' ')"
+commas="$(printf "%s" "$header" | tr -cd ',' | wc -c | tr -d ' ')"
+DELIM="tsv"
+[[ "$commas" -gt "$tabs" ]] && DELIM="csv"
+echo "Detected $DELIM" | tee -a logs/run.log
+
+#Cleaner ( We purposely donot trim the whole line end to avoid deleting empty fields.)
+nba_clean() {
+  /usr/bin/sed -E \
+    -e $'1s/^\xEF\xBB\xBF//' \
+    -e 's/\r$//' \
+    -e 's/[[:space:]]*\t[[:space:]]*/\t/g' \
+    -e 's/([0-9]),([0-9]{3})/\1\2/g' \
+    -e 's/\t(-|NULL|null|N\/A|n\/a|NA|na)(\t|$)/\tNA\2/g'
+}
+# Step 1 : CSV -> TSV
+#for CSV, we parse one char at a time them emit TSV
+if [[ "$DELIM" == "csv" ]]; then
+  awk -v OFS='\t' '
+  {
+    nf = 0; field = ""; inq = 0;
+    for (i = 1; i <= length($0); i++) {
+    ch = substr($0, i, 1);
+     if (ch == "\"") {
+        # if in quotes and next char is also quote -> literal quote
+        if (inq && substr($0, i+1, 1) == "\"") { field = field "\""; i++; }
+        else { inq = !inq; }
+      } else if (ch == "," && !inq) {
+        # delimiter only when not in quotes
+        nf++; f[nf] = field; field = "";
+      } else {
+        field = field ch;
+      }
+    }
+    nf++; f[nf] = field;
+
+    # trim outer whitespace per field
+    for (i = 1; i <= nf; i++) {
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", f[i]);
+    }
+    # emit TSV
+    out = (nf ? f[1] : "");
+    for (i = 2; i <= nf; i++) out = out OFS f[i];
+    print out;
+  }' "$INPUT" | nba_clean > out/clean.tsv
+else
+  nba_clean < "$INPUT" > out/clean.tsv
+fi
+
+echo "cleaned -> out/clean.tsv" | tee -a logs/run.log
+
+ncols="$(head -n 1 out/clean.tsv | awk -F'\t' '{print NF}')"
+awk -F'\t' -v OFS='\t' -v N="$ncols" '
+  NR==1 { print; next }
+  {
+    if (NF < N) {
+      for (i = NF + 1; i <= N; i++) $i = ""
+    }
+    print
+  }
+' out/clean.tsv > out/clean.tsv.tmp && mv out/clean.tsv.tmp out/clean.tsv
+
+tsv_cols="$(head -n 1 out/clean.tsv | awk -F'\t' '{print NF}')"
+csv_commas="$(head -n 1 out/clean.tsv | tr -cd ',' | wc -c | tr -d ' ')"
+if [[ "$tsv_cols" -eq 1 && "$csv_commas" -gt 0 ]]; then
+  awk -v OFS='\t' '
+  {
+    nf = 0; field = ""; inq = 0;
+    for (i = 1; i <= length($0); i++) {
+     ch = substr($0, i, 1);
+     if (ch == "\"") {
+     if (inq && substr($0, i+1, 1) == "\"") { field = field "\""; i++; }
+        else { inq = !inq; }
+      } else if (ch == "," && !inq) {
+        nf++; f[nf] = field; field = "";
+      } else {
+        field = field ch;
+      }
+    }
+    nf++; f[nf] = field;
+    for (i = 1; i <= nf; i++) {
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", f[i]);
+    }
+    out = (nf ? f[1] : "");
+    for (i = 2; i <= nf; i++) out = out OFS f[i];
+    print out;
+  }' "$INPUT" | nba_clean > out/clean.tsv
+  echo "Reconverted CSV to TSV forcefully -> out/clean.tsv" | tee -a logs/run.log
+fi
+
+head -n 20 "$INPUT" > out/sample_before.txt
+head -n 20 out/clean.tsv > out/sample_after.txt
+
+# Column count sanity check
+awk -F'\t' 'NR==1{ncols=NF; next} NF!=ncols{bad++} END{ if(bad>0) printf("[WARN] %d rows have NF!=%d\n",bad,ncols); else printf("[INFO] Column counts consistent (NF=%d)\n",ncols); }' out/clean.tsv | tee -a logs/run.log
+
+echo "Step 1 complete." | tee -a logs/run.log
+
+#frequenct table 1 : count per column 3
+awk -F'\t' 'NR>1 {count[$3]++} END {
+  print "Team\tCount"
+  for (t in count) print t, count[t]
+}' OFS='\t' out/clean.tsv | sort -k2,2nr > out/freq_team.tsv
+
+
+#frequency Table2 : count per column 4
+awk -F'\t' 'NR>1 && $4 != "" {pos[$4]++} END {
+  print "Position\tCount"
+  for (p in pos) print p, pos[p]
+}' OFS='\t' out/clean.tsv | sort -k2,2nr > out/freq_position.tsv
+
+#Top-N
+awk -F'\t' 'NR>1 {pts[$2]+=$6} END {
+  for (p in pts) print p, pts[p]
+}' OFS='\t' out/clean.tsv | sort -k2,2nr | head -n 10 > out/top10_players.tsv
+
+#Skinny Table
+awk -F'\t' 'NR==1 {print $1,$2,$3,$6; next} {print $1,$2,$3,$6}' \
+  OFS='\t' out/clean.tsv > out/skinny.tsv
+
+echo "Step 2 complete." | tee -a logs/run.log
+
+OUTDIR="out"
+LOGDIR="logs"
+
+
+ts() { date '+%Y-%m-%d %H:%M:%S'; }
+
 
 if [ ! -r "$INPUT" ]; then
   echo "Error: cannot read input file: $INPUT" >&2

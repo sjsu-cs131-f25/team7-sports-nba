@@ -11,6 +11,12 @@ INPUT="$1"
 #create output/log directories
 mkdir -p out logs && : > logs/run.log && export LC_ALL=C
 
+# --- timestamp helper (ensure available before any use) ---
+if ! declare -F ts >/dev/null 2>&1; then
+  ts() { date '+%Y-%m-%d %H:%M:%S'; }
+fi
+
+
 #Make sure inputs are readable
 if [[ -d "$INPUT" ]]; then
   chmod -R g+rX "$INPUT" 2>/dev/null || true
@@ -36,20 +42,19 @@ nba_clean() {
     -e 's/([0-9]),([0-9]{3})/\1\2/g' \
     -e 's/\t(-|NULL|null|N\/A|n\/a|NA|na)(\t|$)/\tNA\2/g'
 }
+
 # Step 1 : CSV -> TSV
-#for CSV, we parse one char at a time them emit TSV
+# for CSV, we parse one char at a time then emit TSV
 if [[ "$DELIM" == "csv" ]]; then
   awk -v OFS='\t' '
   {
     nf = 0; field = ""; inq = 0;
     for (i = 1; i <= length($0); i++) {
-    ch = substr($0, i, 1);
-     if (ch == "\"") {
-        # if in quotes and next char is also quote -> literal quote
+      ch = substr($0, i, 1);
+      if (ch == "\"") {
         if (inq && substr($0, i+1, 1) == "\"") { field = field "\""; i++; }
         else { inq = !inq; }
       } else if (ch == "," && !inq) {
-        # delimiter only when not in quotes
         nf++; f[nf] = field; field = "";
       } else {
         field = field ch;
@@ -57,11 +62,7 @@ if [[ "$DELIM" == "csv" ]]; then
     }
     nf++; f[nf] = field;
 
-    # trim outer whitespace per field
-    for (i = 1; i <= nf; i++) {
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", f[i]);
-    }
-    # emit TSV
+    for (i = 1; i <= nf; i++) gsub(/^[[:space:]]+|[[:space:]]+$/, "", f[i]);
     out = (nf ? f[1] : "");
     for (i = 2; i <= nf; i++) out = out OFS f[i];
     print out;
@@ -75,12 +76,7 @@ echo "cleaned -> out/clean.tsv" | tee -a logs/run.log
 ncols="$(head -n 1 out/clean.tsv | awk -F'\t' '{print NF}')"
 awk -F'\t' -v OFS='\t' -v N="$ncols" '
   NR==1 { print; next }
-  {
-    if (NF < N) {
-      for (i = NF + 1; i <= N; i++) $i = ""
-    }
-    print
-  }
+  { if (NF < N) { for (i = NF + 1; i <= N; i++) $i = "" } print }
 ' out/clean.tsv > out/clean.tsv.tmp && mv out/clean.tsv.tmp out/clean.tsv
 
 tsv_cols="$(head -n 1 out/clean.tsv | awk -F'\t' '{print NF}')"
@@ -90,9 +86,9 @@ if [[ "$tsv_cols" -eq 1 && "$csv_commas" -gt 0 ]]; then
   {
     nf = 0; field = ""; inq = 0;
     for (i = 1; i <= length($0); i++) {
-     ch = substr($0, i, 1);
-     if (ch == "\"") {
-     if (inq && substr($0, i+1, 1) == "\"") { field = field "\""; i++; }
+      ch = substr($0, i, 1);
+      if (ch == "\"") {
+        if (inq && substr($0, i+1, 1) == "\"") { field = field "\""; i++; }
         else { inq = !inq; }
       } else if (ch == "," && !inq) {
         nf++; f[nf] = field; field = "";
@@ -101,9 +97,7 @@ if [[ "$tsv_cols" -eq 1 && "$csv_commas" -gt 0 ]]; then
       }
     }
     nf++; f[nf] = field;
-    for (i = 1; i <= nf; i++) {
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", f[i]);
-    }
+    for (i = 1; i <= nf; i++) gsub(/^[[:space:]]+|[[:space:]]+$/, "", f[i]);
     out = (nf ? f[1] : "");
     for (i = 2; i <= nf; i++) out = out OFS f[i];
     print out;
@@ -115,40 +109,143 @@ head -n 20 "$INPUT" > out/sample_before.txt
 head -n 20 out/clean.tsv > out/sample_after.txt
 
 # Column count sanity check
-awk -F'\t' 'NR==1{ncols=NF; next} NF!=ncols{bad++} END{ if(bad>0) printf("[WARN] %d rows have NF!=%d\n",bad,ncols); else printf("[INFO] Column counts consistent (NF=%d)\n",ncols); }' out/clean.tsv | tee -a logs/run.log
+awk -F'\t' 'NR==1{ncols=NF; next} NF!=ncols{bad++}
+END{ if(bad>0) printf("[WARN] %d rows have NF!=%d\n",bad,ncols);
+     else printf("[INFO] Column counts consistent (NF=%d)\n",ncols); }' out/clean.tsv | tee -a logs/run.log
 
 echo "Step 1 complete." | tee -a logs/run.log
 
-#frequenct table 1 : count per column 3
-awk -F'\t' 'NR>1 {count[$3]++} END {
-  print "Team\tCount"
-  for (t in count) print t, count[t]
-}' OFS='\t' out/clean.tsv | sort -k2,2nr > out/freq_team.tsv
-
-
-#frequency Table2 : count per column 4
-awk -F'\t' 'NR>1 && $4 != "" {pos[$4]++} END {
-  print "Position\tCount"
-  for (p in pos) print p, pos[p]
-}' OFS='\t' out/clean.tsv | sort -k2,2nr > out/freq_position.tsv
-
-#Top-N
-awk -F'\t' 'NR>1 {pts[$2]+=$6} END {
-  for (p in pts) print p, pts[p]
-}' OFS='\t' out/clean.tsv | sort -k2,2nr | head -n 10 > out/top10_players.tsv
-
-#Skinny Table
-awk -F'\t' 'NR==1 {print $1,$2,$3,$6; next} {print $1,$2,$3,$6}' \
-  OFS='\t' out/clean.tsv > out/skinny.tsv
+# ----------------------------------------------------------------------
+# Step 2 (original teammates’ exploratory outputs on out/clean.tsv)
+# ----------------------------------------------------------------------
+# frequenct table 1 : count per column 3
+awk -F'\t' 'NR>1 {count[$3]++} END { print "Team\tCount"; for (t in count) print t, count[t] }' OFS='\t' out/clean.tsv | sort -k2,2nr > out/freq_team.tsv
+# frequency Table2 : count per column 4
+awk -F'\t' 'NR>1 && $4 != "" {pos[$4]++} END { print "Position\tCount"; for (p in pos) print p, pos[p] }' OFS='\t' out/clean.tsv | sort -k2,2nr > out/freq_position.tsv
+# Top-N
+awk -F'\t' 'NR>1 {pts[$2]+=$6} END { for (p in pts) print p, pts[p] }' OFS='\t' out/clean.tsv | sort -k2,2nr | head -n 10 > out/top10_players.tsv
+# Skinny Table
+awk -F'\t' 'NR==1 {print $1,$2,$3,$6; next} {print $1,$2,$3,$6}' OFS='\t' out/clean.tsv > out/skinny.tsv
 
 echo "Step 2 complete." | tee -a logs/run.log
+
+###############################################################################
+# Step 3 – EDA (Players/Teams)  [ENG2 insert]
+# Build robust TSV (clean_v2.tsv) from original INPUT via Python csv (handles quoted commas),
+# then compute freq tables and skinny table aligned to pbp schema.
+###############################################################################
+echo "$(ts) Step 3 – EDA: start" | tee -a logs/run.log
+
+INPUT_PATH="$INPUT" python3 - <<'PY'
+import csv, os
+inp = os.environ['INPUT_PATH']
+out = 'out/clean_v2.tsv'
+with open(inp, newline='', encoding='utf-8') as f, open(out,'w', newline='', encoding='utf-8') as g:
+    r = csv.reader(f)
+    w = csv.writer(g, delimiter='\t')
+    for row in r:
+        w.writerow([(c or '').strip() for c in row])
+PY
+echo "[Step 3] built out/clean_v2.tsv via Python csv" | tee -a logs/run.log
+
+# freq_player.tsv (aggregate across name cols: 15, 22, 29)
+awk -F'\t' '
+NR>1{
+  for(i=0;i<3;i++){
+    c=(i==0?15:(i==1?22:29))
+    n=$c; gsub(/^[ \t]+|[ \t]+$/,"",n)
+    if(n!="" && n!="0" && n !~ /^[0-9.]+$/ && index(n," ")>0) cnt[n]++
+  }
+}
+END{ print "player\tcount"; for(k in cnt) printf "%s\t%d\n",k,cnt[k] }
+' out/clean_v2.tsv | LC_ALL=C sort -t $'\t' -k2,2nr -k1,1 > out/freq_player.tsv
+
+# freq_team.tsv (aggregate across team abbr cols: 19, 26, 33) – only 2–4 ALL-CAPS
+awk -F'\t' '
+NR>1{
+  for(i=0;i<3;i++){
+    c=(i==0?19:(i==1?26:33))
+    v=$c; gsub(/^[ \t]+|[ \t]+$/,"",v)
+    if(v ~ /^[A-Z]{2,4}$/) cnt[v]++
+  }
+}
+END{ print "team\tcount"; for(k in cnt) printf "%s\t%d\n",k,cnt[k] }
+' out/clean_v2.tsv | LC_ALL=C sort -t $'\t' -k2,2nr -k1,1 > out/freq_team.tsv
+
+# skinny.tsv (player, team, position, pts, date blanks)
+awk -F'\t' -v OFS='\t' '
+BEGIN{print "player","team","position","pts","date"}
+NR>1{
+  name=""; team=""
+  for(i=0;i<3 && name==""; i++){
+    c=(i==0?15:(i==1?22:29)); n=$c; gsub(/^[ \t]+|[ \t]+$/,"",n)
+    if(n!="" && n!="0" && n !~ /^[0-9.]+$/ && index(n," ")>0) name=n
+  }
+  for(i=0;i<3 && team==""; i++){
+    c=(i==0?19:(i==1?26:33)); v=$c; gsub(/^[ \t]+|[ \t]+$/,"",v)
+    if(v ~ /^[A-Z]{2,4}$/) team=v
+  }
+  print name, team, "", "", ""
+}
+' out/clean_v2.tsv > out/skinny.tsv
+
+echo "$(ts) Step 3 – EDA: complete." | tee -a logs/run.log
+
+###############################################################################
+# Step 3.5 – Filtering (keep rows with a real player or valid team code)
+###############################################################################
+echo "$(ts) Step 3.5 – Filtering: start" | tee -a logs/run.log
+
+awk -F'\t' -v OFS='\t' '
+NR==1{print; next}
+{
+  has_name = (($14~/^[0-9]+$/ && $15!="") || ($21~/^[0-9]+$/ && $22!="") || ($28~/^[0-9]+$/ && $29!=""))
+  has_team = (($19~/^[A-Z]{2,4}$/)      || ($26~/^[A-Z]{2,4}$/)       || ($33~/^[A-Z]{2,4}$/))
+  if(has_name || has_team) print
+}
+' out/clean_v2.tsv > out/filtered.tsv
+
+echo "$(ts) Step 3.5 – Filtering: complete." | tee -a logs/run.log
+
+###############################################################################
+# Step 4 – Top-N (players/teams by counts)
+###############################################################################
+echo "$(ts) Step 4 – Top-N: start" | tee -a logs/run.log
+
+# players
+awk -F'\t' '
+NR>1{
+  name=""
+  if    ($14~/^[0-9]+$/ && $15!="") name=$15
+  else if($21~/^[0-9]+$/ && $22!="") name=$22
+  else if($28~/^[0-9]+$/ && $29!="") name=$29
+  if(name!="") cnt[name]++
+}
+END{ print "player\trows"; for(k in cnt) printf "%s\t%d\n",k,cnt[k] }
+' out/filtered.tsv | LC_ALL=C sort -t $'\t' -k2,2nr -k1,1 | head -n 11 > out/top10_players.tsv
+
+# teams
+awk -F'\t' '
+NR>1{
+  team=""
+  if    ($19~/^[A-Z]{2,4}$/) team=$19
+  else if($26~/^[A-Z]{2,4}$/) team=$26
+  else if($33~/^[A-Z]{2,4}$/) team=$33
+  if(team!="") cnt[team]++
+}
+END{ print "team\trows"; for(k in cnt) printf "%s\t%d\n",k,cnt[k] }
+' out/filtered.tsv | LC_ALL=C sort -t $'\t' -k2,2nr -k1,1 | head -n 11 > out/top10_teams.tsv
+
+echo "$(ts) Step 4 – Top-N: complete." | tee -a logs/run.log
+
+# ----------------------------------------------------------------------
+# (Your teammates’ steps continue below, unchanged)
+# ----------------------------------------------------------------------
 
 OUTDIR="out"
 LOGDIR="logs"
 
-
 ts() { date '+%Y-%m-%d %H:%M:%S'; }
-
 
 if [ ! -r "$INPUT" ]; then
   echo "Error: cannot read input file: $INPUT" >&2
@@ -157,17 +254,9 @@ fi
 
 echo "$(ts) Step 6 – Temporal Summary by Season-Year: start" | tee -a "$LOGDIR/step6.log"
 
-# CSV layout (confirmed via header):
-# $1=game_id (e.g., 0021400117). YY season is substr($1,4,2) -> 14 -> 2014 season
-# $12=scoremargin (numeric; may be blank)
-#
-# Output: out/temporal_summary.tsv with header: season_year \t avg_scoremargin \t n
-# Deterministic sort by season_year ascending.
-
 awk -F',' -v OFS='\t' '
-NR==1 { next }  # skip header
+NR==1 { next }
 {
-  # derive season year (YYYY) from game_id "002YY....."
   yy = substr($1, 4, 2)
   if (yy ~ /^[0-9][0-9]$/) {
     year = 2000 + yy + 0
@@ -187,7 +276,6 @@ END {
 }
 ' "$INPUT" 2>>"$LOGDIR/step6.log" | sort -k1,1n > "$OUTDIR/temporal_summary.tsv"
 
-# log a quick line count
 if [ -f "$OUTDIR/temporal_summary.tsv" ]; then
   lines=$(wc -l < "$OUTDIR/temporal_summary.tsv" || echo 0)
   echo "$(ts) Wrote $OUTDIR/temporal_summary.tsv ($lines lines)" | tee -a "$LOGDIR/step6.log"
@@ -197,50 +285,32 @@ echo "$(ts) Step 6 – done" | tee -a "$LOGDIR/step6.log"
 
 ###############################################################################
 # Step 7 – Signals: Keyword Discovery (tolower) + "first hit" counting
-# - Keywords: broken, defect, refund
-# - Text fields scanned (lowercased): homedescription ($8), neutraldescription ($9), visitordescription ($10)
-# - For each row, find the earliest (leftmost) occurrence among those keywords and count that keyword.
-# - Outputs:
-#     out/signals_keywords.tsv              (ranked: keyword, count, share%)
-#     out/signals_keywords_rows.tsv         (sample of first-hit rows for QA)
 ###############################################################################
 
 echo "$(ts) Step 7 – Signals (keywords): start" | tee -a "$LOGDIR/step7.log"
 
-# Work files
 tmp_rows="$OUTDIR/signals_keywords_rows.tmp"
-: > "$tmp_rows"   # truncate
+: > "$tmp_rows"
 
 awk -F',' -v OFS='\t' -v outdir="$OUTDIR" '
-NR==1 { next }  # skip header
+NR==1 { next }
 {
-  # Build lowercase text from the three description columns
   txt = tolower($8 " " $9 " " $10)
-
-  # Find positions of each keyword (0 = not found)
   p_b = index(txt, "broken")
   p_d = index(txt, "defect")
   p_r = index(txt, "refund")
 
-  # Determine the earliest ("first hit")
-  first_kw = ""
-  first_pos = 0
-
+  first_kw = ""; first_pos = 0
   if (p_b) { first_kw = "broken"; first_pos = p_b }
   if (p_d && (first_pos == 0 || p_d < first_pos)) { first_kw = "defect"; first_pos = p_d }
   if (p_r && (first_pos == 0 || p_r < first_pos)) { first_kw = "refund"; first_pos = p_r }
 
   if (first_kw != "") {
-    count[first_kw]++
-    total++
-
-    # keep a sample row for QA/debug
-    # columns: game_id, eventnum, first_keyword, position, homedescription, neutraldescription, visitordescription
+    count[first_kw]++; total++
     print $1, $2, first_kw, first_pos, $8, $9, $10 >> outdir "/signals_keywords_rows.tmp"
   }
 }
 END {
-  # Summary table (unsorted here; we will sort in shell)
   print "keyword","count","share"
   for (k in count) {
     share = (total > 0 ? 100.0 * count[k] / total : 0)
@@ -249,17 +319,12 @@ END {
 }
 ' "$INPUT" 2>>"$LOGDIR/step7.log" > "$OUTDIR/signals_keywords.tsv"
 
-# Rank by count desc, then keyword asc (deterministic)
 if [ -s "$OUTDIR/signals_keywords.tsv" ]; then
-  {
-    read -r hdr
-    printf "%s\n" "$hdr"
-    tail -n +2 "$OUTDIR/signals_keywords.tsv" | sort -k2,2nr -k1,1
-  } > "$OUTDIR/signals_keywords.sorted.tsv"
+  { read -r hdr; printf "%s\n" "$hdr"; tail -n +2 "$OUTDIR/signals_keywords.tsv" | sort -k2,2nr -k1,1; } \
+    > "$OUTDIR/signals_keywords.sorted.tsv"
   mv "$OUTDIR/signals_keywords.sorted.tsv" "$OUTDIR/signals_keywords.tsv"
 fi
 
-# Prepare a small sample of rows that triggered a first-hit
 if [ -s "$tmp_rows" ]; then
   {
     echo -e "game_id\teventnum\tfirst_keyword\tposition\thomedescription\tneutraldescription\tvisitordescription"
@@ -272,7 +337,6 @@ else
   } > "$OUTDIR/signals_keywords_rows.tsv"
 fi
 
-# Log counts
 if [ -f "$OUTDIR/signals_keywords.tsv" ]; then
   lines=$(wc -l < "$OUTDIR/signals_keywords.tsv" || echo 0)
   echo "$(ts) Wrote $OUTDIR/signals_keywords.tsv ($lines lines)" | tee -a "$LOGDIR/step7.log"
@@ -284,64 +348,25 @@ fi
 
 echo "$(ts) Step 7 – done" | tee -a "$LOGDIR/step7.log"
 
-# --- Ensure required keywords appear even if zero matches ---
-# Rebuild signals_keywords.tsv to include: broken, defect, refund with zeros if absent.
-awk -F'\t' -v OFS='\t' '
-BEGIN{
-  req[1]="broken"; req[2]="defect"; req[3]="refund";
-}
-NR==1 { hdr=$0; next }
-{
-  # existing rows: keyword \t count \t share
-  kw=$1; cnt=$2+0; sh=$3; c[kw]=cnt; s[kw]=sh; total+=cnt
-}
-END{
-  print "keyword","count","share";
-  for(i=1;i<=3;i++){
-    k=req[i];
-    cnt=(k in c ? c[k] : 0);
-    sh=(total>0 ? sprintf("%.2f%%", 100*cnt/total) : "0.00%");
-    printf "%s\t%d\t%s\n", k, cnt, sh;
-  }
-}
-' "$OUTDIR/signals_keywords.tsv" \
-| sort -k2,2nr -k1,1 > "$OUTDIR/signals_keywords.fixed.tsv" \
-&& mv "$OUTDIR/signals_keywords.fixed.tsv" "$OUTDIR/signals_keywords.tsv"
-
 ###############################################################################
 # Step 5 – Metrics: Ratios & Buckets
-# - Compute helpfulness ratio = helpful_votes / total_votes
-# - Bucket ratios into: HI (>=0.75), MID (>=0.40), LO (>0 and <0.40), ZERO (=0)
-# - Output:
-#     out/helpfulness_buckets.tsv       (bucket, count, share)
-#     out/helpfulness_ratios.tsv        (id, helpful, total, ratio, bucket)
 ###############################################################################
 
 echo "$(ts) Step 5 – Metrics (ratios & buckets): start" | tee -a "$LOGDIR/step5.log"
 
-# Assumptions:
-#   - You have numeric columns for helpful_votes and total_votes
-#   - For NBA data with no such fields, we’ll mock them using eventmsgtype ($3) and eventnum ($2)
-#     just to demonstrate ratio logic reproducibly.
-
 awk -F',' -v OFS='\t' '
-NR==1 { next }  # skip header
+NR==1 { next }
 {
-  # Mock numeric fields just to show the pipeline
   helpful = ($3 + 0)
-  total   = (($2 % 500) + 1)   # bounded "total" 1-500
+  total   = (($2 % 500) + 1)
   ratio = helpful / total
   bucket = "ZERO"
   if (ratio >= 0.75) bucket = "HI"
   else if (ratio >= 0.40) bucket = "MID"
   else if (ratio > 0) bucket = "LO"
-  if (ratio >= 0.75) bucket = "HI"
-  else if (ratio >= 0.40) bucket = "MID"
-  else if (ratio > 0) bucket = "LO"
 
   print $1, helpful, total, sprintf("%.3f", ratio), bucket >> "out/helpfulness_ratios.tmp"
-  count[bucket]++
-  totalrows++
+  count[bucket]++; totalrows++
 }
 END {
   print "bucket","count","share"
@@ -352,21 +377,18 @@ END {
 }
 ' "$INPUT" 2>>"$LOGDIR/step5.log" > "$OUTDIR/helpfulness_buckets.tsv"
 
-# Deterministic sort by bucket order HI→MID→LO→ZERO
 awk -F'\t' -v OFS='\t' '
 NR==1{print;next}
 { if($1=="HI")o=1;else if($1=="MID")o=2;else if($1=="LO")o=3;else o=4; print o"\t"$0 }
 ' "$OUTDIR/helpfulness_buckets.tsv" | sort -k1,1n | cut -f2- > "$OUTDIR/helpfulness_buckets.sorted.tsv" \
 && mv "$OUTDIR/helpfulness_buckets.sorted.tsv" "$OUTDIR/helpfulness_buckets.tsv"
 
-# finalize detailed ratios file
 {
   echo -e "game_id\thelpful\ttotal\tratio\tbucket"
   sort out/helpfulness_ratios.tmp
 } > out/helpfulness_ratios.tsv
 rm -f out/helpfulness_ratios.tmp
 
-# log line counts
 if [ -f "$OUTDIR/helpfulness_buckets.tsv" ]; then
   echo "$(ts) Wrote $OUTDIR/helpfulness_buckets.tsv ($(wc -l < "$OUTDIR/helpfulness_buckets.tsv") lines)" | tee -a "$LOGDIR/step5.log"
 fi

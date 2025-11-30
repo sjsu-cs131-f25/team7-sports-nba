@@ -198,7 +198,7 @@ A distributed Spark run includes:
 
 * **Executors tab** — resource usage metrics
 
-Screenshots of the Spark UI are typically included in the final report (assumed to exist outside of this file structure).
+Screenshots of the Spark UI are included in the final report.
 
 ## 📚 License
 

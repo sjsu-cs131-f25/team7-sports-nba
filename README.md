@@ -51,8 +51,6 @@ Contains detailed season-by-season NBA data such as:
 **Columns:** 34
 **Header:** Present
 
-The full dataset is assumed to reside under `data/input/` and contains multiple larger CSV files.
-
 ---
 
 ## 📁 Repository Structure

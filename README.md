@@ -8,7 +8,7 @@
 
 ## 📘 Project Overview
 
-This project performs large-scale analytics on a historical **NBA dataset (1946–present)** [NBA Historical Dataset](https://www.kaggle.com/datasets/wyattowalsh/basketball) using **PySpark**.
+This project performs large-scale analytics on a historical **NBA dataset (1946–present)** ([NBA Historical Dataset](https://www.kaggle.com/datasets/wyattowalsh/basketball)) using **PySpark**.
 We designed and executed a distributed data pipeline to clean, transform, and analyze NBA team and player statistics.
 Outputs include processed analytical tables, Spark UI screenshots, and the final written report.
 

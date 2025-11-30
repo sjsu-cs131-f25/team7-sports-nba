@@ -187,18 +187,6 @@ A distributed Spark run includes:
 
 Screenshots of the Spark UI are included in the final report.
 
-## 🤖 AI Tooling Disclosure
-
-AI tools (e.g., ChatGPT) were used **selectively and minimally**, specifically for:
-
-* Clarifying Spark error messages
-
-* Understanding PySpark configuration flags
-
-* Improving documentation clarity
-
-All code and analytic logic were manually written, tested, and validated by the team.
-
 ## 📚 License
 
 This project is for academic use as part of **CS 131 — Processing Big Data**.

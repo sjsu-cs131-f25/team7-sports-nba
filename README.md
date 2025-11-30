@@ -1,8 +1,8 @@
-# Team 7 — NBA Basketball Analytics
+# Team 7 — Full Court Analytics
 
 ### CS 131 — Processing Big Data (Fall 2025)
 
-### Final Project — Distributed Data Engineering & Analysis
+### Final Project
 
 ---
 
@@ -14,7 +14,7 @@ Outputs include processed analytical tables, Spark UI screenshots, and the final
 
 ---
 
-## 👥 Team Members & Roles
+## 👥 Team Members
 
 | Name | 
  | ----- | 

@@ -1,8 +1,8 @@
-# Team 7 — Full Court Analytics
+# Full Court Analytics
 
-### CS 131 — Processing Big Data (Fall 2025)
+### CS 131-02 — Processing Big Data: Tools and Techniques (Fall 2025)
 
-### Final Project
+### Final Project - Team 7
 
 ---
 

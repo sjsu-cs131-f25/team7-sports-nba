@@ -16,13 +16,13 @@ Outputs include processed analytical tables, Spark UI screenshots, and the final
 
 ## 👥 Team Members & Roles
 
-| Name | Role | 
- | ----- | ----- | 
-| **Ragavan Arivazhagan** | Product Manager | 
-| **David Hsiao** | Data Engineer | 
-| **Kyungtae Kim** | Data Engineer | 
-| **Nishan Bhattarai** | Data Engineer | 
-| **Kareem Sheikh** | Data Storyteller | 
+| Name | 
+ | ----- | 
+| **Ragavan Arivazhagan** |
+| **David Hsiao** |
+| **Kyungtae Kim** |
+| **Nishan Bhattarai** |
+| **Kareem Sheikh** | 
 
 ---
 

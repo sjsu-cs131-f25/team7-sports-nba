@@ -109,6 +109,8 @@ The primary data transformation logic is in `final_pipeline.py` and is typically
 
 ### 2. Run Locally (Standalone Spark)
 
+For local execution, ensure your raw dataset is placed in a folder named **`data/input/`** in the repository root.
+
 From the repository root, execute the main shell script, or run `final_pipeline.py` directly:
 
 ```bash
@@ -118,10 +120,10 @@ From the repository root, execute the main shell script, or run `final_pipeline.
 # Option B: Direct spark-submit using the main PySpark file
 spark-submit final_pipeline.py \
 --input data/input/ \
---output data/out/
+--output out/
 ```
 
-This process loads raw data (assumed to be in `data/input/`) and writes results into `data/out/`.
+This process loads raw data (from `data/input/`) and writes results into the **`out/`** folder.
 
 ### 3. Run on Any Spark Cluster
 
@@ -152,9 +154,9 @@ gs://your-bucket/input/ \
 gs://your-bucket/out/
 ```
 
-## 📥 Input Data Location
+## 📥 Input Data Location (Assumed)
 
-Local input path (assumed):
+Local input path:
 `data/input/`
 
 Cluster / Cloud input path:
@@ -173,14 +175,14 @@ Contents include:
 ## 📤 Output Data Location
 
 Local output path:
-`data/out/`
+`out/`
 
 Cluster / Cloud output path:
 `gs://your-bucket/out/`
 
 Outputs include:
 
-* Cleaned datasets (in `data/out/clean/`)
+* Cleaned datasets (in `out/clean/`)
 
 * Aggregated analysis tables (e.g., `top30_overall.txt`, `entity_counts.tsv`)
 
@@ -201,4 +203,3 @@ Screenshots of the Spark UI are typically included in the final report (assumed 
 ## 📚 License
 
 This project is for academic use as part of **CS 131 — Processing Big Data**.
-

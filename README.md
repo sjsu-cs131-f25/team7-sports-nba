@@ -1,4 +1,7 @@
 # Full Court Analytics
+![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![PySpark](https://img.shields.io/badge/PySpark-FF9800?style=for-the-badge&logo=apachespark&logoColor=white)
+![Shell Scripting](https://img.shields.io/badge/Shell_Scripting-121011?style=for-the-badge&logo=shell&logoColor=white)
 
 ### CS 131-02 — Processing Big Data: Tools and Techniques (Fall 2025)
 

@@ -2,7 +2,7 @@
 ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![PySpark](https://img.shields.io/badge/PySpark-FF9800?style=for-the-badge&logo=apachespark&logoColor=white)
 ![Google Cloud](https://img.shields.io/badge/Google_Cloud-4285F4?style=for-the-badge&logo=google-cloud&logoColor=white)
-![Google Cloud Dataproc](https://img.shields.io/badge/Google_Cloud_Dataproc-4285F4?style=for-the-badge&logo=google-cloud&logoColor=white)
+![Google Cloud Dataproc](https://img.shields.io/badge/Google_Cloud_DataProc-4285F4?style=for-the-badge&logo=google-cloud&logoColor=white)
 ### CS 131-02 — Processing Big Data: Tools and Techniques (Fall 2025)
 
 ### Final Project - Team 7
